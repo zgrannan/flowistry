@@ -3,6 +3,7 @@
 use std::{hash::Hash, time::Instant};
 
 use log::{debug, info};
+use pcs::run_combined_pcs;
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
@@ -60,6 +61,7 @@ pub struct Aliases<'a, 'tcx> {
   tcx: TyCtxt<'tcx>,
   body: &'a Body<'tcx>,
   pub(super) loans: LoanMap<'tcx>,
+  aliases: HashMap<Place<'tcx>, PlaceSet<'tcx>>,
 }
 
 rustc_index::newtype_index! {
@@ -69,6 +71,23 @@ rustc_index::newtype_index! {
 }
 
 impl<'a, 'tcx> Aliases<'a, 'tcx> {
+  fn get_alias_map(
+    body: &'a BodyWithBorrowckFacts<'tcx>,
+    tcx: TyCtxt<'tcx>,
+  ) -> HashMap<Place<'tcx>, PlaceSet<'tcx>> {
+    let mut pcg = run_combined_pcs(body, tcx, None);
+    pcg
+      .all_place_aliases(&body.body, tcx)
+      .into_iter()
+      .map(|(place, aliases)| {
+        (
+          place.to_place(tcx),
+          aliases.into_iter().map(|p| p.to_place(tcx)).collect(),
+        )
+      })
+      .collect()
+  }
+
   /// Runs the alias analysis on a given `body_with_facts`.
   pub fn build(
     tcx: TyCtxt<'tcx>,
@@ -76,10 +95,12 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
+    let aliases = Self::get_alias_map(body_with_facts, tcx);
     Aliases {
       tcx,
       body: &body_with_facts.body,
       loans,
+      aliases,
     }
   }
 
@@ -93,10 +114,12 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     selector: impl Fn(RegionVid, RegionVid, BorrowckLocationIndex) -> bool,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
+    let aliases = Self::get_alias_map(body_with_facts, tcx);
     Aliases {
       tcx,
       body: &body_with_facts.body,
       loans,
+      aliases,
     }
   }
 
@@ -368,6 +391,15 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ///
   /// The place `*n` is an alias for `v` (even though they have different types!).
   pub fn aliases(&self, place: Place<'tcx>) -> PlaceSet<'tcx> {
+    let mut aliases = self.aliases.get(&place).cloned().unwrap_or_else(|| {
+      panic!(
+        "No aliases found for place: {place:?} in {:#?}",
+        self.aliases,
+      )
+    });
+    aliases.retain(|p| *p == place || p.is_direct(self.body, self.tcx));
+    return aliases;
+
     let mut aliases = HashSet::default();
     aliases.insert(place);
 
@@ -489,7 +521,7 @@ mod test {
       let b = 2;
       let c = &a;
       let d = &b;
-      let e = foo(c, d);      
+      let e = foo(c, d);
     }
     "#;
     alias_harness(input, |tcx, body, aliases| {
@@ -499,14 +531,14 @@ mod test {
 
       // `*e` aliases only `a` (not `b`) because of the lifetime constraints on `foo`
       compare_sets(
-        aliases.aliases(e_deref),
         hashset! { p.local("a").mk(), e_deref },
+        aliases.aliases(e_deref),
       );
 
       // `*e` aliases only `b` because nothing might relate it to `a`
       compare_sets(
-        aliases.aliases(d_deref),
         hashset! { p.local("b").mk(), d_deref },
+        aliases.aliases(d_deref),
       );
     });
   }
