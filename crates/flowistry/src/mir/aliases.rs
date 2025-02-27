@@ -3,7 +3,7 @@
 use std::{hash::Hash, time::Instant};
 
 use log::{debug, info};
-use pcs::run_combined_pcs;
+use pcs::{combined_pcs::PCGError, free_pcs::PcgBasicBlocks, run_combined_pcs};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
@@ -19,7 +19,7 @@ use rustc_middle::{
   mir::{visit::Visitor, *},
   ty::{Region, RegionKind, RegionVid, Ty, TyCtxt, TyKind},
 };
-use rustc_utils::{mir::place::UNKNOWN_REGION, timer::elapsed, PlaceExt};
+use rustc_utils::{hashset, mir::place::UNKNOWN_REGION, timer::elapsed, PlaceExt};
 
 use crate::{
   extensions::{is_extension_active, PointerMode},
@@ -61,7 +61,7 @@ pub struct Aliases<'a, 'tcx> {
   tcx: TyCtxt<'tcx>,
   body: &'a Body<'tcx>,
   pub(super) loans: LoanMap<'tcx>,
-  aliases: HashMap<Place<'tcx>, PlaceSet<'tcx>>,
+  pcg_blocks: Option<PcgBasicBlocks<'tcx>>,
 }
 
 rustc_index::newtype_index! {
@@ -71,23 +71,6 @@ rustc_index::newtype_index! {
 }
 
 impl<'a, 'tcx> Aliases<'a, 'tcx> {
-  fn get_alias_map(
-    body: &'a BodyWithBorrowckFacts<'tcx>,
-    tcx: TyCtxt<'tcx>,
-  ) -> HashMap<Place<'tcx>, PlaceSet<'tcx>> {
-    let mut pcg = run_combined_pcs(body, tcx, None);
-    pcg
-      .all_place_aliases(&body.body, tcx)
-      .into_iter()
-      .map(|(place, aliases)| {
-        (
-          place.to_place(tcx),
-          aliases.into_iter().map(|p| p.to_place(tcx)).collect(),
-        )
-      })
-      .collect()
-  }
-
   /// Runs the alias analysis on a given `body_with_facts`.
   pub fn build(
     tcx: TyCtxt<'tcx>,
@@ -95,12 +78,14 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
-    let aliases = Self::get_alias_map(body_with_facts, tcx);
+    let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
+      .results_for_all_blocks()
+      .ok();
     Aliases {
       tcx,
       body: &body_with_facts.body,
       loans,
-      aliases,
+      pcg_blocks,
     }
   }
 
@@ -114,12 +99,14 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     selector: impl Fn(RegionVid, RegionVid, BorrowckLocationIndex) -> bool,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
-    let aliases = Self::get_alias_map(body_with_facts, tcx);
+    let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
+      .results_for_all_blocks()
+      .ok();
     Aliases {
       tcx,
       body: &body_with_facts.body,
       loans,
-      aliases,
+      pcg_blocks,
     }
   }
 
@@ -390,16 +377,12 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   /// ```
   ///
   /// The place `*n` is an alias for `v` (even though they have different types!).
-  pub fn aliases(&self, place: Place<'tcx>) -> PlaceSet<'tcx> {
-    let mut aliases = self.aliases.get(&place).cloned().unwrap_or_else(|| {
-      panic!(
-        "No aliases found for place: {place:?} in {:#?}",
-        self.aliases,
-      )
-    });
-    aliases.retain(|p| *p == place || p.is_direct(self.body, self.tcx));
-    return aliases;
-
+  pub fn aliases(
+    &self,
+    place: Place<'tcx>,
+    location: Option<Location>,
+    assert_eq: bool,
+  ) -> PlaceSet<'tcx> {
     let mut aliases = HashSet::default();
     aliases.insert(place);
 
@@ -449,9 +432,46 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     });
 
     aliases.extend(region_aliases);
-    log::trace!("Aliases for place {place:?} are {aliases:?}");
+    if let Some(pcg_blocks) = &self.pcg_blocks {
+      let pcg_place_aliases = pcg_blocks.all_place_aliases(place, self.body, self.tcx);
+      let mut final_aliases = pcg_place_aliases
+        .into_iter()
+        .flat_map(|p| {
+          for (place, elem) in p.iter_projections() {
+            if matches!(elem, ProjectionElem::Deref) {
+              let base_aliases = pcg_blocks.all_place_aliases(
+                place.project_deeper(&[elem], self.tcx),
+                self.body,
+                self.tcx,
+              );
+              let remaining_projection = &p.projection[place.projection.len() + 1 ..];
+              return base_aliases
+                .into_iter()
+                .map(|p| p.project_deeper(remaining_projection, self.tcx))
+                .collect::<Vec<_>>();
+            }
+          }
+          vec![p]
+        })
+        .filter(|p| {
+          p.is_direct(self.body, self.tcx) || p.local.as_usize() <= self.body.arg_count
+        })
+        .collect::<HashSet<_>>();
+      final_aliases.insert(place);
 
-    aliases
+      // if assert_eq {
+      //   assert_eq!(
+      //     final_aliases, aliases,
+      //     "Mismatch for aliases of {place:?} at {location:?}"
+      //   );
+      // }
+
+      log::trace!("Aliases for place {place:?} are {aliases:?}");
+
+      final_aliases
+    } else {
+      aliases
+    }
   }
 }
 
@@ -532,13 +552,13 @@ mod test {
       // `*e` aliases only `a` (not `b`) because of the lifetime constraints on `foo`
       compare_sets(
         hashset! { p.local("a").mk(), e_deref },
-        aliases.aliases(e_deref),
+        aliases.aliases(e_deref, None, false),
       );
 
       // `*e` aliases only `b` because nothing might relate it to `a`
       compare_sets(
         hashset! { p.local("b").mk(), d_deref },
-        aliases.aliases(d_deref),
+        aliases.aliases(d_deref, None, false),
       );
     });
   }
@@ -561,14 +581,14 @@ fn main() {
 
       // `*b` only aliases `a` because we don't have a projection for `a`
       compare_sets(
-        aliases.aliases(b_deref),
-        hashset! { p.local("a").mk(), b_deref },
+        hashset! { p.local("a").mk(), b_deref},
+        aliases.aliases(b_deref, None, false),
       );
 
       // `*d` aliases `c.1` because we know the projection from the source
       compare_sets(
-        aliases.aliases(d_deref),
         hashset! { p.local("c").field(1).mk(), d_deref },
+        aliases.aliases(d_deref, None, false),
       );
     });
   }

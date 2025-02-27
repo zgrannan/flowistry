@@ -101,10 +101,10 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
     self.place_info.location_domain()
   }
 
-  fn influences(&self, place: Place<'tcx>) -> SmallVec<[Place<'tcx>; 8]> {
+  fn influences(&self, place: Place<'tcx>, location: Option<Location>) -> SmallVec<[Place<'tcx>; 8]> {
     let conflicts = self
       .place_info
-      .aliases(place)
+      .aliases(place, location, true)
       .iter()
       .flat_map(|alias| self.place_info.conflicts(*alias));
     let provenance =
@@ -113,7 +113,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
         .flat_map(|(place_ref, _)| {
           self
             .place_info
-            .aliases(Place::from_ref(place_ref, self.tcx))
+            .aliases(Place::from_ref(place_ref, self.tcx), location, true)
             .iter()
         });
     conflicts.chain(provenance).copied().collect()
@@ -127,13 +127,14 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
     &self,
     state: &FlowDomain<'tcx>,
     place: Place<'tcx>,
+    location: Option<Location>,
   ) -> LocationOrArgSet {
     let mut deps = LocationOrArgSet::new(self.location_domain());
     for subplace in self
       .place_info
       .reachable_values(place, Mutability::Not)
       .iter()
-      .flat_map(|place| self.influences(*place))
+      .flat_map(|place| self.influences(*place, location))
     {
       deps.union(state.row_set(&self.place_info.normalize(subplace)));
     }
@@ -161,7 +162,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
     let add_deps = |state: &FlowDomain<'tcx>,
                     input,
                     target_deps: &mut LocationOrArgSet| {
-      for relevant in self.influences(input) {
+      for relevant in self.influences(input, Some(location)) {
         let relevant_deps = state.row_set(&self.place_info.normalize(relevant));
         trace!("    For relevant {relevant:?} for input {input:?} adding deps {relevant_deps:?}");
         target_deps.union(relevant_deps);
@@ -199,7 +200,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
     for (mt, deps) in mutations.iter().zip(&mut all_deps) {
       // Clear sub-places of mutated place (if sound to do so)
       if matches!(mt.status, MutationStatus::Definitely)
-        && self.place_info.aliases(mt.mutated).len() == 1
+        && self.place_info.aliases(mt.mutated, Some(location), true).len() == 1
       {
         for sub in self.place_info.children(mt.mutated).iter() {
           state.clear_row(&self.place_info.normalize(*sub));
@@ -211,7 +212,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
 
       let mutable_aliases = self
         .place_info
-        .aliases(mt.mutated)
+        .aliases(mt.mutated, Some(location), true)
         .iter()
         .filter(|alias| {
           // Remove any conflicts that aren't actually mutable, e.g. if x : &T ends up
