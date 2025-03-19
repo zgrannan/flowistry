@@ -192,8 +192,7 @@ pub fn compute_dependencies<'tcx>(
           LocationOrArg::Location(location) => {
             let deps = results.analysis.deps_for(
               results.state_at(*location),
-              *place,
-              Some(*location),
+              *place
             );
             outputs.union(&deps);
           }

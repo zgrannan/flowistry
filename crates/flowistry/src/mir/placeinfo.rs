@@ -89,12 +89,12 @@ impl<'a, 'tcx> PlaceInfo<'a, 'tcx> {
   ///
   /// For example, if `x = &y`, then `*x` aliases `y`.
   /// Note that an alias is NOT guaranteed to be of the same type as `place`!
-  pub fn aliases(&self, place: Place<'tcx>, location: Option<Location>, assert_eq: bool) -> &PlaceSet<'tcx> {
+  pub fn aliases(&self, place: Place<'tcx>) -> &PlaceSet<'tcx> {
     // note: important that aliases are computed on the unnormalized place
     // which contains region information
     self
       .aliases_cache
-      .get(&self.normalize(place), move |_| self.aliases.aliases(place, location, assert_eq))
+      .get(&self.normalize(place), move |_| self.aliases.aliases(place))
   }
 
   /// Returns all reachable fields of `place` without going through references.

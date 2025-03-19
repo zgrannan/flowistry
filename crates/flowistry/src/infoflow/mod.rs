@@ -42,7 +42,7 @@ mod recursive;
 ///   let ℓ: Location         = Location::START;
 ///   let Θ: &FlowDomain      = results.state_at(ℓ);
 ///   let p: Place            = Place::make(Local::from_usize(1), &[], tcx);
-///   let κ: LocationOrArgSet = results.analysis.deps_for(Θ, p, None);
+///   let κ: LocationOrArgSet = results.analysis.deps_for(Θ, p);
 ///   for ℓ2 in κ.iter() {
 ///     println!("at location {ℓ:?}, place {p:?} depends on location {ℓ2:?}");
 ///   }

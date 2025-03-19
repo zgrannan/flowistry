@@ -3,7 +3,7 @@
 use std::{hash::Hash, time::Instant};
 
 use log::{debug, info};
-use pcs::{combined_pcs::PCGError, free_pcs::PcgBasicBlocks, run_combined_pcs};
+use pcs::{free_pcs::PcgBasicBlocks, run_combined_pcs};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
@@ -19,7 +19,7 @@ use rustc_middle::{
   mir::{visit::Visitor, *},
   ty::{Region, RegionKind, RegionVid, Ty, TyCtxt, TyKind},
 };
-use rustc_utils::{hashset, mir::place::UNKNOWN_REGION, timer::elapsed, PlaceExt};
+use rustc_utils::{mir::place::UNKNOWN_REGION, timer::elapsed, PlaceExt};
 
 use crate::{
   extensions::{is_extension_active, PointerMode},
@@ -380,8 +380,6 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   pub fn aliases(
     &self,
     place: Place<'tcx>,
-    location: Option<Location>,
-    assert_eq: bool,
   ) -> PlaceSet<'tcx> {
     let mut aliases = HashSet::default();
     aliases.insert(place);
@@ -552,13 +550,13 @@ mod test {
       // `*e` aliases only `a` (not `b`) because of the lifetime constraints on `foo`
       compare_sets(
         hashset! { p.local("a").mk(), e_deref },
-        aliases.aliases(e_deref, None, false),
+        aliases.aliases(e_deref),
       );
 
       // `*e` aliases only `b` because nothing might relate it to `a`
       compare_sets(
         hashset! { p.local("b").mk(), d_deref },
-        aliases.aliases(d_deref, None, false),
+        aliases.aliases(d_deref),
       );
     });
   }
@@ -582,13 +580,13 @@ fn main() {
       // `*b` only aliases `a` because we don't have a projection for `a`
       compare_sets(
         hashset! { p.local("a").mk(), b_deref},
-        aliases.aliases(b_deref, None, false),
+        aliases.aliases(b_deref),
       );
 
       // `*d` aliases `c.1` because we know the projection from the source
       compare_sets(
         hashset! { p.local("c").field(1).mk(), d_deref },
-        aliases.aliases(d_deref, None, false),
+        aliases.aliases(d_deref),
       );
     });
   }
