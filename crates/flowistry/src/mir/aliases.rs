@@ -377,10 +377,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   /// ```
   ///
   /// The place `*n` is an alias for `v` (even though they have different types!).
-  pub fn aliases(
-    &self,
-    place: Place<'tcx>,
-  ) -> PlaceSet<'tcx> {
+  pub fn aliases(&self, place: Place<'tcx>) -> PlaceSet<'tcx> {
     let mut aliases = HashSet::default();
     aliases.insert(place);
 
@@ -430,6 +427,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     });
 
     aliases.extend(region_aliases);
+    log::trace!("Aliases for place {place:?} are {aliases:?}");
     if let Some(pcg_blocks) = &self.pcg_blocks {
       let pcg_place_aliases = pcg_blocks.all_place_aliases(place, self.body, self.tcx);
       let mut final_aliases = pcg_place_aliases
@@ -456,16 +454,6 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
         })
         .collect::<HashSet<_>>();
       final_aliases.insert(place);
-
-      // if assert_eq {
-      //   assert_eq!(
-      //     final_aliases, aliases,
-      //     "Mismatch for aliases of {place:?} at {location:?}"
-      //   );
-      // }
-
-      log::trace!("Aliases for place {place:?} are {aliases:?}");
-
       final_aliases
     } else {
       aliases

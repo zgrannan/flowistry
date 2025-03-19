@@ -126,7 +126,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
   pub fn deps_for(
     &self,
     state: &FlowDomain<'tcx>,
-    place: Place<'tcx>
+    place: Place<'tcx>,
   ) -> LocationOrArgSet {
     let mut deps = LocationOrArgSet::new(self.location_domain());
     for subplace in self
