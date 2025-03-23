@@ -17,7 +17,7 @@ use rustc_index::{
 };
 use rustc_middle::{
   mir::{visit::Visitor, *},
-  ty::{Region, RegionKind, RegionVid, Ty, TyCtxt, TyKind},
+  ty::{Region, RegionKind, RegionVid, Ty, TyCtxt},
 };
 use rustc_utils::{mir::place::UNKNOWN_REGION, timer::elapsed, PlaceExt};
 
@@ -61,7 +61,7 @@ pub struct Aliases<'a, 'tcx> {
   tcx: TyCtxt<'tcx>,
   body: &'a Body<'tcx>,
   pub(super) loans: LoanMap<'tcx>,
-  pcg_blocks: Option<PcgBasicBlocks<'tcx>>,
+  pcg_blocks: PcgBasicBlocks<'tcx>,
 }
 
 rustc_index::newtype_index! {
@@ -80,7 +80,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
     let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
       .results_for_all_blocks()
-      .ok();
+      .unwrap();
     Aliases {
       tcx,
       body: &body_with_facts.body,
@@ -101,7 +101,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
     let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
       .results_for_all_blocks()
-      .ok();
+      .unwrap();
     Aliases {
       tcx,
       body: &body_with_facts.body,
@@ -378,86 +378,39 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ///
   /// The place `*n` is an alias for `v` (even though they have different types!).
   pub fn aliases(&self, place: Place<'tcx>) -> PlaceSet<'tcx> {
-    let mut aliases = HashSet::default();
-    aliases.insert(place);
-
     // Places with no derefs, or derefs from arguments, have no aliases
     if place.is_direct(self.body, self.tcx) {
+      let mut aliases = HashSet::default();
+      aliases.insert(place);
       return aliases;
     }
 
-    // place = after[*ptr]
-    let (ptr, after) = place
-      .refs_in_projection(self.body, self.tcx)
-      .last()
-      .unwrap();
-
-    // ptr : &'region orig_ty
-    let ptr_ty = ptr.ty(self.body.local_decls(), self.tcx).ty;
-    let (region, orig_ty) = match ptr_ty.kind() {
-      _ if ptr_ty.is_box() => (
-        UNKNOWN_REGION,
-        ptr_ty.boxed_ty().expect("Could not unbox boxed type??"),
-      ),
-      TyKind::RawPtr(ty, _) => (UNKNOWN_REGION, *ty),
-      TyKind::Ref(Region(Interned(RegionKind::ReVar(region), _)), ty, _) => {
-        (*region, *ty)
-      }
-      _ => return aliases,
-    };
-
-    // For each p ∈ loans('region),
-    //   if p : orig_ty then add: after[p]
-    //   else add: p
-    let region_loans = self
-      .loans
-      .get(&region)
-      .map(|loans| loans.iter())
+    let pcg_place_aliases = self.pcg_blocks.all_place_aliases(place, self.body, self.tcx);
+    let mut final_aliases = pcg_place_aliases
       .into_iter()
-      .flatten();
-    let region_aliases = region_loans.map(|(loan, _)| {
-      let loan_ty = loan.ty(self.body.local_decls(), self.tcx).ty;
-      if orig_ty == loan_ty {
-        let mut projection = loan.projection.to_vec();
-        projection.extend(after.iter().copied());
-        Place::make(loan.local, &projection, self.tcx)
-      } else {
-        *loan
-      }
-    });
-
-    aliases.extend(region_aliases);
-    log::trace!("Aliases for place {place:?} are {aliases:?}");
-    if let Some(pcg_blocks) = &self.pcg_blocks {
-      let pcg_place_aliases = pcg_blocks.all_place_aliases(place, self.body, self.tcx);
-      let mut final_aliases = pcg_place_aliases
-        .into_iter()
-        .flat_map(|p| {
-          for (place, elem) in p.iter_projections() {
-            if matches!(elem, ProjectionElem::Deref) {
-              let base_aliases = pcg_blocks.all_place_aliases(
-                place.project_deeper(&[elem], self.tcx),
-                self.body,
-                self.tcx,
-              );
-              let remaining_projection = &p.projection[place.projection.len() + 1 ..];
-              return base_aliases
-                .into_iter()
-                .map(|p| p.project_deeper(remaining_projection, self.tcx))
-                .collect::<Vec<_>>();
-            }
+      .flat_map(|p| {
+        for (place, elem) in p.iter_projections() {
+          if matches!(elem, ProjectionElem::Deref) {
+            let base_aliases = self.pcg_blocks.all_place_aliases(
+              place.project_deeper(&[elem], self.tcx),
+              self.body,
+              self.tcx,
+            );
+            let remaining_projection = &p.projection[place.projection.len() + 1 ..];
+            return base_aliases
+              .into_iter()
+              .map(|p| p.project_deeper(remaining_projection, self.tcx))
+              .collect::<Vec<_>>();
           }
-          vec![p]
-        })
-        .filter(|p| {
-          p.is_direct(self.body, self.tcx) || p.local.as_usize() <= self.body.arg_count
-        })
-        .collect::<HashSet<_>>();
-      final_aliases.insert(place);
-      final_aliases
-    } else {
-      aliases
-    }
+        }
+        vec![p]
+      })
+      .filter(|p| {
+        p.is_direct(self.body, self.tcx) || p.local.as_usize() <= self.body.arg_count
+      })
+      .collect::<HashSet<_>>();
+    final_aliases.insert(place);
+    final_aliases
   }
 }
 

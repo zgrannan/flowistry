@@ -46,7 +46,7 @@ pub fn compile_body(
   input: impl Into<String>,
   callback: impl for<'tcx> FnOnce(TyCtxt<'tcx>, BodyId, &BodyWithBorrowckFacts<'tcx>) + Send,
 ) {
-  borrowck_facts::enable_mir_simplification();
+  // borrowck_facts::enable_mir_simplification();
   test_utils::compile_body(input, callback)
 }
 
