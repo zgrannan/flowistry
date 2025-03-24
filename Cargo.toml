@@ -4,8 +4,8 @@ exclude = ["ide/src/tests/mock_project"]
 resolver = "2"
 
 [workspace.dependencies]
-rustc_plugin = {path = "../rustc_plugin/crates/rustc_plugin"}
-rustc_utils = {path = "../rustc_plugin/crates/rustc_utils"}
+rustc_plugin = {git = "https://github.com/zgrannan/rustc_plugin", branch = "pcg-flowistry"}
+rustc_utils = {git = "https://github.com/zgrannan/rustc_plugin", branch = "pcg-flowistry"}
 indexical = {version = "0.3.1", default-features = false, features = ["rustc"]}
 
 [profile.bench]
