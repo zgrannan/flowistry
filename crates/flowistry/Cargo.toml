@@ -15,7 +15,7 @@ test = ["rustc_utils/test"]
 debug = ["html-escape"]
 
 [dependencies]
-pcs = { path = "../../../pcs" }
+pcg = { path = "../../../pcg" }
 anyhow = "1"
 log = "0.4"
 fluid-let = "1.0"
