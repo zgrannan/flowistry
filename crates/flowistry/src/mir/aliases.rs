@@ -3,7 +3,7 @@
 use std::{hash::Hash, time::Instant};
 
 use log::{debug, info};
-use pcg::{free_pcs::PcgBasicBlocks, run_combined_pcs};
+use pcg::{free_pcs::PcgBasicBlocks, run_pcg};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
@@ -78,7 +78,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
-    let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
+    let pcg_blocks = run_pcg(body_with_facts, tcx, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
@@ -99,7 +99,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     selector: impl Fn(RegionVid, RegionVid, BorrowckLocationIndex) -> bool,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
-    let pcg_blocks = run_combined_pcs(body_with_facts, tcx, None)
+    let pcg_blocks = run_pcg(body_with_facts, tcx, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
@@ -385,7 +385,9 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
       return aliases;
     }
 
-    let pcg_place_aliases = self.pcg_blocks.all_place_aliases(place, self.body, self.tcx);
+    let pcg_place_aliases = self
+      .pcg_blocks
+      .all_place_aliases(place, self.body, self.tcx);
     let mut final_aliases = pcg_place_aliases
       .into_iter()
       .flat_map(|p| {
