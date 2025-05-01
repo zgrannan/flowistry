@@ -3,7 +3,7 @@
 use std::{hash::Hash, time::Instant};
 
 use log::{debug, info};
-use pcg::{borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg};
+use pcg::{borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
