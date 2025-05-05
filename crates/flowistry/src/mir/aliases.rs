@@ -1,6 +1,6 @@
 //! Alias analysis to determine the points-to set of a reference.
 
-use std::{hash::Hash, time::Instant};
+use std::{alloc::Global, hash::Hash, time::Instant};
 
 use log::{debug, info};
 use pcg::{borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg};
@@ -79,7 +79,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, None)
+    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, Global, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
@@ -101,7 +101,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, None)
+    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, Global, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
