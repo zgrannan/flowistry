@@ -3,7 +3,9 @@
 use std::{alloc::Global, hash::Hash, time::Instant};
 
 use log::{debug, info};
-use pcg::{borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg};
+use pcg::{
+  borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg, PcgCtxt,
+};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
   fx::{FxHashMap as HashMap, FxHashSet as HashSet},
@@ -79,7 +81,8 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, Global, None)
+    let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
+    let pcg_blocks = run_pcg(&pcg_ctxt, Global, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
@@ -101,7 +104,8 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_blocks = run_pcg(&body_with_facts.body, tcx, &bc, Global, None)
+    let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
+    let pcg_blocks = run_pcg(&pcg_ctxt, Global, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
