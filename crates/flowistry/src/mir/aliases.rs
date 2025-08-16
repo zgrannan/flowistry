@@ -82,7 +82,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
     let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
-    let pcg_blocks = run_pcg(&pcg_ctxt, Global, None)
+    let pcg_blocks = run_pcg(&pcg_ctxt, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
@@ -105,7 +105,7 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
     let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
     let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
-    let pcg_blocks = run_pcg(&pcg_ctxt, Global, None)
+    let pcg_blocks: PcgBasicBlocks<'tcx> = run_pcg(&pcg_ctxt, None)
       .results_for_all_blocks()
       .unwrap();
     Aliases {
