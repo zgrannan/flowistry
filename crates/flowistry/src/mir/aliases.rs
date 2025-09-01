@@ -4,7 +4,7 @@ use std::{alloc::Global, hash::Hash, time::Instant};
 
 use log::{debug, info};
 use pcg::{
-  borrow_checker::r#impl::BorrowCheckerImpl, free_pcs::PcgBasicBlocks, run_pcg, PcgCtxt,
+  borrow_checker::r#impl::BorrowCheckerImpl, results::PcgBasicBlocks, run_pcg, PcgCtxt,
 };
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
