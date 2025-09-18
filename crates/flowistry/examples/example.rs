@@ -25,6 +25,7 @@ extern crate rustc_span;
 use std::process::Command;
 
 use flowistry::infoflow::Direction;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_hir::{BodyId, ItemKind};
 use rustc_middle::{
@@ -47,9 +48,11 @@ fn compute_dependencies<'tcx>(
 ) {
   println!("Body:\n{}", body_with_facts.body.to_string(tcx).unwrap());
 
+  let pcg_ctxt_creator = PcgCtxtCreator::new(tcx);
+
   // This computes the core information flow data structure. But it's not very
   // visualizable, so we need to post-process it with a specific query.
-  let results = flowistry::infoflow::compute_flow(tcx, body_id, body_with_facts);
+  let results = flowistry::infoflow::compute_flow(tcx, body_id, body_with_facts, &pcg_ctxt_creator);
 
   // We construct a target of the first argument at the start of the function.
   let arg_local = Local::from_usize(1);

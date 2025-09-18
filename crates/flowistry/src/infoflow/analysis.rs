@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use indexical::impls::RustcIndexMatrix as IndexMatrix;
 use log::{debug, trace};
+use pcg::{PcgCtxt, PcgCtxtCreator};
 use rustc_data_structures::fx::FxHashMap as HashMap;
 use rustc_hir::{def_id::DefId, BodyId};
 use rustc_middle::{
@@ -73,6 +74,8 @@ pub struct FlowAnalysis<'a, 'tcx> {
 
   pub(crate) control_dependencies: ControlDependencies<BasicBlock>,
   pub(crate) recurse_cache: RefCell<HashMap<BodyId, FlowResults<'a, 'tcx>>>,
+
+  pub(crate) pcg_ctxt_creator: &'a PcgCtxtCreator<'tcx>,
 }
 
 impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
@@ -82,6 +85,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
     def_id: DefId,
     body: &'a Body<'tcx>,
     place_info: PlaceInfo<'a, 'tcx>,
+    pcg_ctxt_creator: &'a PcgCtxtCreator<'tcx>,
   ) -> Self {
     let recurse_cache = RefCell::new(HashMap::default());
     let control_dependencies = body.control_dependencies();
@@ -93,6 +97,7 @@ impl<'a, 'tcx> FlowAnalysis<'a, 'tcx> {
       place_info,
       control_dependencies,
       recurse_cache,
+      pcg_ctxt_creator,
     }
   }
 

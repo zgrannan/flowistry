@@ -17,6 +17,7 @@ use std::{borrow::Cow, io::Write};
 
 use analysis::IssueFound;
 use flowistry::infoflow;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_hir::{
   intravisit::{self, Visitor},
   BodyId,
@@ -73,7 +74,8 @@ impl<'tcx> Visitor<'tcx> for IfcVisitor<'tcx> {
     let tcx = self.tcx;
     let local_def_id = tcx.hir().body_owner_def_id(body_id);
     let body_with_facts = borrowck_facts::get_body_with_borrowck_facts(tcx, local_def_id);
-    let flow = &infoflow::compute_flow(tcx, body_id, body_with_facts);
+    let pcg_ctxt_creator = PcgCtxtCreator::new(tcx);
+    let flow = &infoflow::compute_flow(tcx, body_id, body_with_facts, &pcg_ctxt_creator);
     if let IssueFound::Yes = analysis::analyze(&body_id, flow).unwrap() {
       self.issue_found = IssueFound::Yes;
     }

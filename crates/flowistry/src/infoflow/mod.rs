@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 
 use log::debug;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_hir::BodyId;
 use rustc_middle::ty::TyCtxt;
@@ -80,13 +81,14 @@ pub fn compute_flow<'a, 'tcx>(
   tcx: TyCtxt<'tcx>,
   body_id: BodyId,
   body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
+  pcg_ctxt_creator: &'a PcgCtxtCreator<'tcx>,
 ) -> FlowResults<'a, 'tcx> {
   BODY_STACK.with(|body_stack| {
     body_stack.borrow_mut().push(body_id);
     debug!("{}", body_with_facts.body.to_string(tcx).unwrap());
 
     let def_id = tcx.hir().body_owner_def_id(body_id).to_def_id();
-    let place_info = PlaceInfo::build(tcx, def_id, body_with_facts);
+    let place_info = PlaceInfo::build(tcx, def_id, body_with_facts, pcg_ctxt_creator.new_nll_ctxt(body_with_facts));
     let location_domain = place_info.location_domain().clone();
 
     let body = &body_with_facts.body;
@@ -94,7 +96,7 @@ pub fn compute_flow<'a, 'tcx>(
     let results = {
       block_timer!("Flow");
 
-      let analysis = FlowAnalysis::new(tcx, def_id, body, place_info);
+      let analysis = FlowAnalysis::new(tcx, def_id, body, place_info, pcg_ctxt_creator);
       engine::iterate_to_fixpoint(tcx, body, location_domain, analysis)
       // analysis.into_engine(tcx, body).iterate_to_fixpoint()
     };

@@ -1,4 +1,5 @@
 use log::{debug, info};
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt};
 use rustc_middle::{
   mir::*,
   ty::{ClosureKind, GenericArgKind, TyKind},
@@ -119,7 +120,7 @@ impl<'tcx> FlowAnalysis<'_, 'tcx> {
     let mut recurse_cache = self.recurse_cache.borrow_mut();
     let flow = recurse_cache.entry(body_id).or_insert_with(|| {
       info!("Recursing into {}", tcx.def_path_debug_str(*def_id));
-      super::compute_flow(tcx, body_id, body_with_facts)
+      super::compute_flow(tcx, body_id, body_with_facts, self.pcg_ctxt_creator)
     });
     let body = &body_with_facts.body;
 

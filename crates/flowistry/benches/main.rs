@@ -13,6 +13,7 @@ use criterion::{
 };
 use flowistry::infoflow::Direction;
 use glob::glob;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_hir::{BodyId, ItemKind};
 use rustc_middle::{
@@ -33,7 +34,8 @@ fn analysis<'tcx>(
   body_with_facts: &BodyWithBorrowckFacts<'tcx>,
   ty: AnalysisType,
 ) {
-  let results = flowistry::infoflow::compute_flow(tcx, body_id, body_with_facts);
+  let pcg_ctxt_creator = PcgCtxtCreator::new(tcx);
+  let results = flowistry::infoflow::compute_flow(tcx, body_id, body_with_facts, &pcg_ctxt_creator);
 
   if ty == AnalysisType::FlowAndDeps {
     let targets = body_with_facts

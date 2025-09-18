@@ -4,7 +4,9 @@ use std::{alloc::Global, hash::Hash, time::Instant};
 
 use log::{debug, info};
 use pcg::{
-  borrow_checker::r#impl::BorrowCheckerImpl, results::PcgBasicBlocks, run_pcg, PcgCtxt,
+  borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl},
+  results::PcgBasicBlocks,
+  run_pcg, PcgCtxt,
 };
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::{
@@ -63,7 +65,7 @@ pub struct Aliases<'a, 'tcx> {
   tcx: TyCtxt<'tcx>,
   body: &'a Body<'tcx>,
   pub(super) loans: LoanMap<'tcx>,
-  pcg_blocks: PcgBasicBlocks<'tcx>,
+  pcg_blocks: PcgBasicBlocks<'a, 'tcx>,
 }
 
 rustc_index::newtype_index! {
@@ -78,13 +80,11 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
+    pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, |_, _, _| true);
-    let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
-    let pcg_blocks = run_pcg(&pcg_ctxt, None)
-      .results_for_all_blocks()
-      .unwrap();
+    let pcg_blocks = run_pcg(pcg_ctxt, None).results_for_all_blocks().unwrap();
+    assert_eq!(pcg_ctxt.body_def_id(), body_with_facts.body.source.def_id().expect_local());
     Aliases {
       tcx,
       body: &body_with_facts.body,
@@ -100,14 +100,11 @@ impl<'a, 'tcx> Aliases<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
+    pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
     selector: impl Fn(RegionVid, RegionVid, BorrowckLocationIndex) -> bool,
   ) -> Self {
     let loans = Self::compute_loans(tcx, def_id, body_with_facts, selector);
-    let bc = BorrowCheckerImpl::new(tcx, body_with_facts);
-    let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
-    let pcg_blocks: PcgBasicBlocks<'tcx> = run_pcg(&pcg_ctxt, None)
-      .results_for_all_blocks()
-      .unwrap();
+    let pcg_blocks = run_pcg(pcg_ctxt, None).results_for_all_blocks().unwrap();
     Aliases {
       tcx,
       body: &body_with_facts.body,
@@ -472,7 +469,9 @@ mod test {
     test_utils::compile_body(input, |tcx, body_id, body_with_facts| {
       let body = &body_with_facts.body;
       let def_id = tcx.hir().body_owner_def_id(body_id);
-      let aliases = Aliases::build(tcx, def_id.to_def_id(), body_with_facts);
+      let bc = NllBorrowCheckerImpl::new(tcx, body_with_facts);
+      let pcg_ctxt = PcgCtxt::new(body, tcx, &bc);
+      let aliases = Aliases::build(tcx, def_id.to_def_id(), body_with_facts, &pcg_ctxt);
 
       f(tcx, body, aliases)
     });

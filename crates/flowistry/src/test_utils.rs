@@ -7,6 +7,7 @@ use std::{cell::RefCell, fs, io, panic, path::Path};
 use anyhow::Result;
 use fluid_let::fluid_set;
 use log::info;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_data_structures::fx::FxHashSet as HashSet;
 use rustc_hir::BodyId;
@@ -134,7 +135,8 @@ pub fn test_command_output(
         fluid_set!(EVAL_MODE, &mode);
 
         let target = target.to_span(tcx).unwrap();
-        let results = infoflow::compute_flow(tcx, body_id, body_with_facts);
+        let pcg_ctxt_creator = PcgCtxtCreator::new(tcx);
+        let results = infoflow::compute_flow(tcx, body_id, body_with_facts, &pcg_ctxt_creator);
         let spanner = Spanner::new(tcx, body_id, &body_with_facts.body);
 
         let actual = output_fn(results, spanner, target)

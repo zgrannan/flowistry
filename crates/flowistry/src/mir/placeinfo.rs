@@ -3,6 +3,7 @@
 use std::{ops::ControlFlow, rc::Rc};
 
 use indexical::ToIndex;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt};
 use rustc_borrowck::consumers::BodyWithBorrowckFacts;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
@@ -57,11 +58,12 @@ impl<'a, 'tcx> PlaceInfo<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     body_with_facts: &'a BodyWithBorrowckFacts<'tcx>,
+    pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
   ) -> Self {
     block_timer!("aliases");
     let body = &body_with_facts.body;
     let location_domain = Self::build_location_arg_domain(body);
-    let aliases = Aliases::build(tcx, def_id, body_with_facts);
+    let aliases = Aliases::build(tcx, def_id, body_with_facts, &pcg_ctxt);
 
     PlaceInfo {
       aliases,
@@ -290,7 +292,9 @@ mod test {
     test_utils::compile_body(input, |tcx, body_id, body_with_facts| {
       let body = &body_with_facts.body;
       let def_id = tcx.hir().body_owner_def_id(body_id);
-      let place_info = PlaceInfo::build(tcx, def_id.to_def_id(), body_with_facts);
+      let bc = NllBorrowCheckerImpl::new(tcx, body_with_facts);
+      let pcg_ctxt = PcgCtxt::new(&body_with_facts.body, tcx, &bc);
+      let place_info = PlaceInfo::build(tcx, def_id.to_def_id(), body_with_facts, &pcg_ctxt);
 
       f(tcx, body, place_info)
     });

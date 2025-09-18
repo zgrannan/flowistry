@@ -27,6 +27,7 @@ base64 = "0.21"
 rustc_utils = {workspace = true, features = ["serde"]}
 rustc_plugin = {workspace = true}
 indexical = {workspace = true}
+pcg = { path = "../../../pcg", default-features = false }
 
 # Decompose
 petgraph = {version = "0.6", default-features = false, optional = true}

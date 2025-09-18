@@ -1,6 +1,7 @@
 use anyhow::Result;
 use flowistry::infoflow::{self, Direction};
 use itertools::Itertools;
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, PcgCtxt, PcgCtxtCreator};
 use rustc_hir::BodyId;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
@@ -34,7 +35,8 @@ pub fn focus(tcx: TyCtxt, body_id: BodyId) -> Result<FocusOutput> {
   let def_id = tcx.hir().body_owner_def_id(body_id);
   let body_with_facts = get_body_with_borrowck_facts(tcx, def_id);
   let body = &body_with_facts.body;
-  let results = &infoflow::compute_flow(tcx, body_id, body_with_facts);
+  let pcg_ctxt_creator = PcgCtxtCreator::new(tcx);
+  let results = &infoflow::compute_flow(tcx, body_id, body_with_facts, &pcg_ctxt_creator);
 
   let source_map = tcx.sess.source_map();
   let spanner = Spanner::new(tcx, body_id, body);
